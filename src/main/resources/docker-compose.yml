@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  chromadb:
+    image: chromadb/chroma:0.4.15
+    container_name: chefbot-chroma
+    command: /bin/bash -c "pip install 'numpy<2.0.0' && uvicorn chromadb.app:app --host 0.0.0.0 --port 8000"
+
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ALLOW_RESET=TRUE
+    networks:
+      - chefbot-net
+    restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: chefbot-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - chefbot-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+
+networks:
+  chefbot-net:
+    driver: bridge
+
+volumes:
+  chroma-data:
+  ollama-data:

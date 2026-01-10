@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Configuration</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0f0f0f; font-family: 'Poppins', sans-serif; overflow: hidden; margin: 0; color: #fff; }
+        .main-container { display: flex; height: 100vh; }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 280px;
+            background: #121212;
+            color: #a0a0b0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #2b2b36;
+        }
+        .sidebar-header {
+            padding: 25px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #2b2b36;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 20px; }
+
+        .btn-new-chat {
+            background: #3b82f6;
+            border: none;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-weight: 500;
+            margin-bottom: 25px;
+            transition: all 0.2s;
+        }
+        .btn-new-chat:hover { background: #2563eb; color: white; transform: translateY(-2px); }
+
+        .btn-scraper {
+            background: #1f1f23; /* Mai inchis decat fundalul sidebar-ului */
+            border: 1px solid #333;
+            color: #cfcfd1;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-weight: 500;
+            margin-bottom: 25px; /* Spatiul pana la istoric */
+            transition: all 0.2s;
+            text-align: center;
+            text-decoration: none;
+            display: block;
+        }
+        .btn-scraper:hover {
+            background: #2b2b36;
+            color: white;
+            border-color: #555;
+            transform: translateY(-2px);
+        }
+        .session-item {
+            display: block;
+            padding: 12px 15px;
+            padding-right: 40px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #cfcfd1;
+            transition: background 0.2s;
+            font-size: 0.95rem;
+            position: relative;
+        }
+        .session-item:hover { background: #2b2b36; color: white; }
+        .session-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+            font-weight: 500;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .delete-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: #666;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .delete-btn:hover {
+            background-color: #ef4444;
+            color: white;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        /* FORM AREA */
+        .form-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0f0f0f;
+            position: relative;
+        }
+
+        .top-bar {
+            padding: 15px 30px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        .user-simple-name {
+            font-weight: 500;
+            color: #ddd;
+            font-size: 0.95rem;
+        }
+
+        .config-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .config-card {
+            background: #1a1a1a;
+            padding: 50px;
+            border-radius: 20px;
+            border: 1px solid #333;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 650px;
+        }
+        .form-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #888;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .form-control, .form-select {
+            background: #2a2a2a;
+            border: 1px solid #333;
+            padding: 12px 15px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            margin-bottom: 20px;
+            color: white;
+        }
+
+        /* --- PLACEHOLDER FIX --- */
+        .form-control::placeholder {
+            color: #888 !important; /* Visible light grey */
+            opacity: 1;
+        }
+
+        .form-control:focus, .form-select:focus {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+            border-color: #3b82f6;
+        }
+        .btn-start {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: 500;
+            width: 100%;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+        .btn-start:hover { background: #2563eb; }
+
+        .btn-logout {
+            background: transparent;
+            border: 1px solid #333;
+            color: #888;
+            border-radius: 8px;
+            width: 100%;
+            padding: 10px;
+            transition: all 0.2s;
+        }
+        .btn-logout:hover { border-color: #ef4444; color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <span>ChefBot</span>
+        </div>
+        <div class="sidebar-content">
+            <a th:href="@{/chef/new}" class="btn btn-new-chat">New Conversation</a>
+            <a th:href="@{/scraper}" class="btn btn-scraper">Manage Recipes (Scraper)</a>
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 15px;">History</div>
+
+            <div th:if="${allSessions == null or allSessions.isEmpty()}" class="text-muted small">
+                No recent sessions.
+            </div>
+
+            <div th:each="s : ${allSessions}" class="d-flex align-items-center mb-1 position-relative">
+                <a th:href="@{'/chef/chat/' + ${s.id}}"
+                   th:class="${s.id == sessionId ? 'session-item active w-100' : 'session-item w-100'}">
+                    <div class="text-truncate" th:text="${s.sessionName}"></div>
+                    <div style="font-size: 0.75rem; opacity: 0.6;" th:text="${s.chefPersonality}"></div>
+                </a>
+
+                <form th:action="@{'/chef/delete-session/' + ${s.id}}" method="post">
+                    <input type="hidden" name="userId" th:value="${userId}" />
+                    <button type="submit" class="delete-btn" onclick="return confirm('Delete session?');">✕</button>
+                </form>
+            </div>
+        </div>
+        <div class="p-3 border-top border-secondary border-opacity-25">
+            <form th:action="@{/logout}" method="post">
+                <button type="submit" class="btn btn-logout">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="form-area">
+        <div class="top-bar">
+            <div class="user-simple-name">
+                <span th:text="${#authentication != null ? #authentication.name : 'User'}">User</span>
+            </div>
+        </div>
+
+        <div class="config-container">
+            <div class="config-card">
+                <h2 class="mb-2 fw-bold text-white">What are we cooking today?</h2>
+                <p class="mb-4" style="color: #ccc;">Configure session details.</p>
+
+                <form th:action="@{/chef/new}" th:object="${request}" method="post">
+                    <label class="form-label">Session Name</label>
+                    <input type="text" class="form-control" th:field="*{sessionName}" placeholder="e.g., Festive Dinner">
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Personality</label>
+                            <select class="form-select" th:field="*{chefPersonality}">
+                                <option value="">Choose...</option>
+                                <option value="Gordon Ramsay (Strict)">Gordon Ramsay (Strict)</option>
+                                <option value="Grandma (Traditional)">Grandma (Traditional)</option>
+                                <option value="French Chef (Sophisticated)">French Chef (Sophisticated)</option>
+                                <option value="Nutritionist (Healthy)">Nutritionist (Healthy)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Diet</label>
+                            <select class="form-select" th:field="*{dietType}">
+                                <option value="Omnivore" selected>Omnivore</option>
+                                <option value="Vegetarian">Vegetarian</option>
+                                <option value="Vegan">Vegan</option>
+                                <option value="Keto">Keto</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <label class="form-label">Restrictions / Allergies</label>
+                            <input type="text" class="form-control" th:field="*{allergies}" placeholder="Optional (e.g., nuts, gluten)">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-start">Start Session</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

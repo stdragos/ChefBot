@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Register</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f0f0f;
+            font-family: 'Poppins', sans-serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .card {
+            border: 1px solid #333;
+            border-radius: 16px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            padding: 40px;
+            background: #1a1a1a;
+        }
+        .app-brand {
+            font-weight: 600;
+            font-size: 1.5rem;
+            color: #fff;
+            margin-bottom: 5px;
+            letter-spacing: -0.5px;
+        }
+        .form-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+        }
+        .form-control {
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid #333;
+            background: #2a2a2a;
+            color: #fff;
+            font-size: 0.95rem;
+        }
+        .form-control:focus {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+            border-color: #3b82f6;
+            background: #2a2a2a;
+            color: #fff;
+        }
+        .btn-primary-custom {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            width: 100%;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+        .btn-primary-custom:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+        .links { margin-top: 20px; text-align: center; font-size: 0.9rem; }
+        .links a { color: #3b82f6; text-decoration: none; font-weight: 500; }
+        .links a:hover { text-decoration: underline; color: #60a5fa; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="text-center mb-4">
+        <div class="app-brand">New Account</div>
+        <div class="text-muted small" style="color: #888!important;">Join the team</div>
+    </div>
+
+    <form th:action="@{/chef/register}" th:object="${user}" method="post">
+        <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" th:field="*{username}" required>
+            <div class="text-danger small mt-1" th:if="${#fields.hasErrors('username')}" th:errors="*{username}"></div>
+        </div>
+        <div class="mb-4">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" th:field="*{password}" required>
+            <div class="text-danger small mt-1" th:if="${#fields.hasErrors('password')}" th:errors="*{password}"></div>
+        </div>
+
+        <div th:if="${error}" class="alert alert-danger small border-0 bg-danger text-white py-2 mb-3">
+            <span th:text="${error}"></span>
+        </div>
+
+        <button type="submit" class="btn btn-primary-custom">Register</button>
+    </form>
+
+    <div class="links">
+        <a th:href="@{/login}">Already have an account? Login</a>
+    </div>
+</div>
+</body>
+</html>

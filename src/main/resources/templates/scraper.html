@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Recipe Scraper</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f0f0f;
+            color: #fff;
+            font-family: 'Poppins', sans-serif;
+        }
+        .container { max-width: 900px; margin-top: 50px; }
+
+        /* Cards */
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #eee;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .card-header {
+            border-bottom: 1px solid #333;
+            font-weight: 600;
+            background: rgba(255,255,255,0.02);
+            padding: 15px 20px;
+        }
+        .card-body { padding: 20px; }
+
+        /* --- FIX: INPUTS & TEXTAREAS --- */
+        .form-control {
+            background: #2a2a2a !important; /* Force dark bg */
+            border: 1px solid #333;
+            color: #ffffff !important;      /* Force WHITE text when typing */
+            font-size: 0.95rem;
+        }
+
+        /* Fix the Placeholder text visibility */
+        .form-control::placeholder {
+            color: #888 !important;         /* Light Grey placeholder */
+            opacity: 1;
+        }
+
+        .form-control:focus {
+            background: #2a2a2a !important;
+            color: #ffffff !important;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+        }
+
+        /* Labels */
+        .form-label {
+            color: #aaa;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: #3b82f6;
+            border: none;
+            padding: 10px 20px;
+            font-weight: 500;
+        }
+        .btn-primary:hover { background: #2563eb; }
+
+        .btn-outline-secondary {
+            color: #aaa;
+            border-color: #444;
+        }
+        .btn-outline-secondary:hover {
+            background: #333;
+            color: #fff;
+            border-color: #555;
+        }
+
+        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
+        .btn-danger:hover { background: #ef4444; color: white; }
+
+        /* Links */
+        .recipe-link { color: #60a5fa; text-decoration: none; }
+        .recipe-link:hover { text-decoration: underline; }
+
+        /* Table */
+        .table { --bs-table-bg: transparent; --bs-table-color: #ccc; }
+        .table thead th {
+            border-bottom: 1px solid #333;
+            color: #888;
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+        .table td { border-bottom: 1px solid #222; vertical-align: middle; }
+        .table tbody tr:hover { background-color: rgba(255,255,255,0.03); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold text-white">Kitchen Knowledge Base</h2>
+        <a href="/chef/new" class="btn btn-outline-secondary">Back to Chat</a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Add New Recipes</div>
+        <div class="card-body">
+            <form th:action="@{/scraper/add}" method="post">
+                <div class="mb-3">
+                    <label class="form-label">Paste recipe URLs (one per line)</label>
+                    <textarea name="urls" class="form-control" rows="5"
+                              placeholder="https://example.com/recipe1&#10;https://example.com/recipe2"
+                              required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Start Scraping</button>
+                <span th:if="${param.started}" class="text-success ms-3 small">Scraping started in background... Refresh in a few seconds.</span>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Stored Recipes (<span th:text="${recipes.size()}">0</span>)</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead>
+                    <tr>
+                        <th class="ps-4">Title</th>
+                        <th>Diet</th>
+                        <th>Scanned Date</th>
+                        <th class="text-end pe-4">Action</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:if="${recipes.isEmpty()}">
+                        <td colspan="4" class="text-center py-5 text-muted">
+                            <h5>No recipes found</h5>
+                            <p class="small mb-0">Paste some URLs above to build your database.</p>
+                        </td>
+                    </tr>
+                    <tr th:each="r : ${recipes}">
+                        <td class="ps-4">
+                            <div class="fw-bold text-white" th:text="${r.title}">Title</div>
+                            <a th:href="${r.url}" target="_blank" class="recipe-link small" th:text="${r.url}">url</a>
+                        </td>
+                        <td><span class="badge bg-secondary" th:text="${r.diet}">Omnivore</span></td>
+                        <td class="small" style="color: #999;" th:text="${#temporals.format(r.scannedAt, 'dd-MM-yyyy HH:mm')}">Date</td>
+                        <td class="text-end pe-4">
+                            <form th:action="@{'/scraper/delete/' + ${r.id}}" method="post" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

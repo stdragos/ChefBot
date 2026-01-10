@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Chat</title>
+    <meta charset="UTF-8">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
+
+    <style>
+        /* --- GLOBAL SETUP --- */
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f0f0f;
+            font-family: 'Poppins', sans-serif;
+            color: #fff;
+        }
+
+        .main-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: #121212;
+            color: #a0a0b0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #2b2b36;
+        }
+        .sidebar-header {
+            padding: 25px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #2b2b36;
+        }
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .btn-new-chat {
+            background: #3b82f6;
+            border: none;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-weight: 500;
+            margin-bottom: 25px;
+            transition: transform 0.2s;
+        }
+        .btn-new-chat:hover { transform: translateY(-2px); color: white; background: #2563eb;}
+
+        .btn-scraper {
+            background: #1f1f23; /* Mai inchis decat fundalul sidebar-ului */
+            border: 1px solid #333;
+            color: #cfcfd1;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-weight: 500;
+            margin-bottom: 25px; /* Spatiul pana la istoric */
+            transition: all 0.2s;
+            text-align: center;
+            text-decoration: none;
+            display: block;
+        }
+        .btn-scraper:hover {
+            background: #2b2b36;
+            color: white;
+            border-color: #555;
+            transform: translateY(-2px);
+        }
+        .session-item {
+            display: block;
+            padding: 12px 15px;
+            padding-right: 40px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #cfcfd1;
+            transition: background 0.2s;
+            font-size: 0.95rem;
+            position: relative;
+        }
+        .session-item:hover { background: #2b2b36; color: white; }
+        .session-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+            font-weight: 500;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        /* X BUTTON */
+        .delete-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: #666;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .delete-btn:hover {
+            background-color: #ef4444;
+            color: white;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        .btn-logout {
+            background: transparent;
+            border: 1px solid #333;
+            color: #888;
+            border-radius: 8px;
+            width: 100%;
+            padding: 10px;
+            transition: all 0.2s;
+        }
+        .btn-logout:hover { border-color: #ef4444; color: #ef4444; }
+
+        /* --- CHAT AREA --- */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0f0f0f;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 15px 30px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+            flex-shrink: 0;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .diet-badge {
+            font-size: 0.8rem;
+            color: #aaa;
+            background: #252525;
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid #333;
+        }
+
+        .user-simple-name {
+            font-weight: 500;
+            color: #ddd;
+            font-size: 0.95rem;
+        }
+
+        /* MESSAGES AREA */
+        .chat-box {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            background: #0f0f0f;
+        }
+
+        /* BUBBLES */
+        .msg-user {
+            background: #3b82f6;
+            color: white;
+            padding: 14px 20px;
+            border-radius: 18px 18px 0 18px;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            display: inline-block;
+            max-width: 100%;
+        }
+        .msg-ai {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 16px 24px;
+            border-radius: 18px 18px 18px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #333;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .wrapper-user {
+            text-align: right;
+            margin-left: auto;
+            max-width: 75%;
+        }
+        .wrapper-ai {
+            text-align: left;
+            margin-right: auto;
+            max-width: 80%;
+        }
+
+        .sender-name {
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        /* 2. MARKDOWN STYLING (Beautiful AI Output) */
+        .formatted-content {
+            text-align: left; /* Ensure markdown inside user bubble aligns left for readability */
+        }
+        .formatted-content h1,
+        .formatted-content h2,
+        .formatted-content h3 {
+            font-weight: 600;
+            margin-top: 12px;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        .formatted-content ul, .formatted-content ol {
+            padding-left: 20px;
+            margin-bottom: 10px;
+        }
+        .formatted-content li {
+            margin-bottom: 4px;
+        }
+        .formatted-content p {
+            margin-bottom: 8px;
+        }
+        .formatted-content strong {
+            font-weight: 700;
+        }
+        /* Specifics for AI Bubble */
+        .msg-ai .formatted-content h3,
+        .msg-ai .formatted-content strong {
+            color: #fff;
+        }
+        .msg-ai .formatted-content a {
+            color: #60a5fa;
+        }
+        /* Specifics for User Bubble (White text on Blue bg) */
+        .msg-user .formatted-content h3,
+        .msg-user .formatted-content strong {
+            color: #fff;
+        }
+
+        /* INPUT AREA */
+        .input-area {
+            background: #1a1a1a;
+            padding: 20px 40px;
+            border-top: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .input-group-clean {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 8px 15px;
+            border: 1px solid #333;
+            display: flex;
+            align-items: center;
+            transition: 0.2s;
+        }
+        .input-group-clean:focus-within {
+            border-color: #3b82f6;
+            background: #2a2a2a;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .chat-input {
+            border: none;
+            background: transparent;
+            padding: 8px;
+            flex: 1;
+            outline: none;
+            font-size: 0.95rem;
+            color: white;
+        }
+        .chat-input::placeholder {
+            color: #888 !important;
+            opacity: 1;
+        }
+
+        .btn-send {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-send:hover { background: #2563eb; }
+        .btn-send:disabled {
+            background: #333;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* SPINNER */
+        .spinner-loader {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: none;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* TYPING INDICATOR */
+        .typing-indicator {
+            display: none;
+            background: #1a1a1a;
+            padding: 10px 20px;
+            border-radius: 18px;
+            border: 1px solid #333;
+            width: fit-content;
+            margin-bottom: 20px;
+        }
+        .typing-dots span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #888;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <div class="sidebar">
+        <div class="sidebar-header">ChefBot</div>
+        <div class="sidebar-content">
+            <a th:href="@{/chef/new}" class="btn btn-new-chat">New Conversation</a>
+            <a th:href="@{/scraper}" class="btn btn-scraper">Manage Recipes (Scraper)</a>
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 15px;">History</div>
+            <div th:if="${allSessions == null or allSessions.isEmpty()}" class="text-muted small">
+                Empty history.
+            </div>
+            <div th:each="s : ${allSessions}" class="d-flex align-items-center mb-1 position-relative">
+                <a th:href="@{'/chef/chat/' + ${s.id}}"
+                   th:class="${s.id == sessionId ? 'session-item active w-100' : 'session-item w-100'}">
+                    <div class="text-truncate" th:text="${s.sessionName}"></div>
+                    <div style="font-size: 0.75rem; opacity: 0.6;" th:text="${s.chefPersonality}"></div>
+                </a>
+                <form th:action="@{'/chef/delete-session/' + ${s.id}}" method="post">
+                    <input type="hidden" name="userId" th:value="${userId}" />
+                    <button type="submit" class="delete-btn" onclick="return confirm('Delete?');">✕</button>
+                </form>
+            </div>
+        </div>
+        <div class="p-3 border-top border-secondary border-opacity-25">
+            <form th:action="@{/logout}" method="post">
+                <button type="submit" class="btn btn-logout">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <div>
+                <h5 class="mb-0 fw-bold text-white" th:text="${sessionName}" style="font-size: 1.1rem;">Session</h5>
+                <span class="small" style="color: #ccc;" th:text="${chefPersonality}">Chef</span>
+            </div>
+            <div class="header-right">
+                <div class="diet-badge">
+                    <span id="dietDisplay" th:text="${dietType}">Standard</span>
+                    <span class="mx-1">•</span>
+                    <span id="excludedDisplay" th:text="${excludedIngredients}">No restrictions</span>
+                </div>
+                <div class="user-simple-name">
+                    <span th:text="${#authentication != null ? #authentication.name : 'User'}">User</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-box" id="chatWindow">
+            <div th:if="${messagesList == null or messagesList.isEmpty()}" class="text-center mt-5" style="color: #666;">
+                <h4 style="color: #eee;">Hello!</h4>
+                <p>Tell me what ingredients you have available.</p>
+            </div>
+
+            <th:block th:if="${messagesList != null}">
+                <div th:each="msg : ${messagesList}">
+
+                    <div th:if="${msg.sender == 'USER'}" class="wrapper-user">
+                        <div class="msg-user">
+                            <div class="raw-markdown d-none" th:text="${msg.content}"></div>
+                            <div class="formatted-content"></div>
+                        </div>
+                    </div>
+
+                    <div th:if="${msg.sender != 'USER'}" class="wrapper-ai">
+                        <span class="sender-name">ChefBot</span>
+                        <div class="msg-ai">
+                            <div class="raw-markdown d-none" th:text="${msg.content}"></div>
+                            <div class="formatted-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </th:block>
+
+            <div id="loading-bubble" class="wrapper-ai typing-indicator">
+                <span class="sender-name">ChefBot (thinking...)</span>
+                <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <form id="chatForm" th:action="@{'/chef/chat/' + ${sessionId}}" method="post">
+                <div class="input-group-clean" id="inputGroup">
+                    <input type="text" name="message" id="msgInput" class="chat-input" placeholder="Type your message..." required autocomplete="off" autofocus>
+                    <button type="submit" id="btnSend" class="btn-send">
+                        <span class="spinner-loader" id="btnSpinner"></span>
+                        <span id="btnText">Send</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // 1. Fix for null texts in header
+        const diet = document.getElementById('dietDisplay');
+        const excl = document.getElementById('excludedDisplay');
+        if(diet && (diet.innerText === 'null' || diet.innerText === '')) diet.innerText = 'Omnivore';
+        if(excl && (excl.innerText === 'null' || excl.innerText === '')) excl.innerText = 'No restrictions';
+
+        // 2. MARKDOWN RENDERING LOGIC
+        const bubbles = document.querySelectorAll('.msg-user, .msg-ai');
+
+        bubbles.forEach(bubble => {
+            const rawContainer = bubble.querySelector('.raw-markdown');
+            const targetContainer = bubble.querySelector('.formatted-content');
+
+            if (rawContainer && targetContainer) {
+                const rawText = rawContainer.textContent;
+                const htmlContent = marked.parse(rawText);
+                const cleanHtml = DOMPurify.sanitize(htmlContent);
+                targetContainer.innerHTML = cleanHtml;
+            }
+        });
+
+        // 3. SCROLL TO BOTTOM (Must happen AFTER Markdown rendering)
+        var chatWindow = document.getElementById("chatWindow");
+        if(chatWindow) {
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // 4. LOADING LOGIC
+        const form = document.getElementById('chatForm');
+        const btnSend = document.getElementById('btnSend');
+        const btnText = document.getElementById('btnText');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const msgInput = document.getElementById('msgInput');
+        const inputGroup = document.getElementById('inputGroup');
+        const loadingBubble = document.getElementById('loading-bubble');
+
+        form.addEventListener('submit', function(e) {
+            if(msgInput.value.trim() === "") return;
+
+            msgInput.readonly = true;
+            btnSend.disabled = true;
+            inputGroup.style.opacity = "0.7";
+            btnText.innerText = "Sending...";
+            btnSpinner.style.display = "inline-block";
+            loadingBubble.style.display = "block";
+
+            // Scroll again to show the loading bubble
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        });
+    });
+</script>
+
+</body>
+</html>

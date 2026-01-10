@@ -1,0 +1,23 @@
+{
+  "mcpServer": {
+    "name": "chefbot-recipe-server",
+    "version": "1.0.0",
+    "baseUrl": "http://localhost:8080"
+  },
+  "tools": {
+    "searchRecipes": {
+      "name": "searchRecipes",
+      "description": "Search for recipes in the database based on ingredients or dish name. The query MUST be in ENGLISH.",
+      "endpoint": "/mcp/tools/searchRecipes",
+      "method": "GET",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "required": true,
+          "description": "The search query for finding recipes"
+        }
+      }
+    }
+  }
+}
+
