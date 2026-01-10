@@ -3,6 +3,7 @@ package com.project.chefbot.config;
 import com.project.chefbot.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -14,13 +15,15 @@ import static org.springframework.security.config.Customizer.withDefaults;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests((requests) -> requests
-                        .requestMatchers("/h2-console/**", "/css/**", "/js/**", "/chef/register", "/login", "/register", "/mcp/**").permitAll()
+                        .requestMatchers("/h2-console", "/h2-console/**", "/css/**", "/js/**", "/chef/register", "/login", "/register", "/mcp/**").permitAll()
+                        .requestMatchers("/scraper/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .formLogin((form) -> form
@@ -32,9 +35,9 @@ public class SecurityConfig {
 
                 .logout((logout) -> logout.permitAll())
 
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console/**", "/api/**", "/mcp/**"));
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console", "/h2-console/**", "/api/**", "/mcp/**"));
 
-        http.headers(headers -> headers.frameOptions(frame -> frame.disable()));
+        http.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
 
         return http.build();
     }
@@ -44,9 +47,10 @@ public class SecurityConfig {
         return username -> {
             com.project.chefbot.model.User user = userRepository.findByUsername(username);
             if (user == null) throw new org.springframework.security.core.userdetails.UsernameNotFoundException("User not found");
+            String role = user.getRole() != null ? user.getRole() : "USER";
             return org.springframework.security.core.userdetails.User.withUsername(user.getUsername())
                     .password(user.getPassword())
-                    .roles("USER")
+                    .roles(role)
                     .build();
         };
     }
