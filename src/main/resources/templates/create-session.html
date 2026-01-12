@@ -246,12 +246,12 @@
 
                 <form th:action="@{/chef/new}" th:object="${request}" method="post">
                     <label class="form-label">Session Name</label>
-                    <input type="text" class="form-control" th:field="*{sessionName}" placeholder="e.g., Festive Dinner">
+                    <input type="text" class="form-control" th:field="*{sessionName}" placeholder="e.g., Festive Dinner" required minlength="3" maxlength="50">
 
                     <div class="row">
                         <div class="col-md-6">
                             <label class="form-label">Personality</label>
-                            <select class="form-select" th:field="*{chefPersonality}">
+                            <select class="form-select" th:field="*{chefPersonality}" required>
                                 <option value="">Choose...</option>
                                 <option value="Gordon Ramsay (Strict)">Gordon Ramsay (Strict)</option>
                                 <option value="Grandma (Traditional)">Grandma (Traditional)</option>
@@ -261,8 +261,9 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Diet</label>
-                            <select class="form-select" th:field="*{dietType}">
-                                <option value="Omnivore" selected>Omnivore</option>
+                            <select class="form-select" th:field="*{dietType}" required>
+                                <option value="">Choose...</option>
+                                <option value="Omnivore">Omnivore</option>
                                 <option value="Vegetarian">Vegetarian</option>
                                 <option value="Vegan">Vegan</option>
                                 <option value="Keto">Keto</option>
@@ -273,7 +274,7 @@
                     <div class="row">
                         <div class="col-md-12">
                             <label class="form-label">Restrictions / Allergies</label>
-                            <input type="text" class="form-control" th:field="*{allergies}" placeholder="Optional (e.g., nuts, gluten)">
+                            <input type="text" class="form-control" th:field="*{allergies}" placeholder="Optional (e.g., nuts, gluten)" maxlength="200">
                         </div>
                     </div>
 

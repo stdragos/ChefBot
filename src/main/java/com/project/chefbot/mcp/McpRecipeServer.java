@@ -42,7 +42,7 @@ public class McpRecipeServer {
             SearchRequest searchRequest = SearchRequest.builder()
                     .query(query)
                     .topK(5)
-                    .similarityThreshold(0.5)
+                    .similarityThreshold(0.45)
                     .filterExpression(b.eq("type", "web-recipe").build())
                     .build();
 
@@ -89,11 +89,10 @@ public class McpRecipeServer {
     @GetMapping("/debug")
     public SearchResponse debugVectorStore() {
         try {
-            // Search with a generic query and no filter to see what's in the store
             SearchRequest request = SearchRequest.builder()
                     .query("recipe food")
                     .topK(10)
-                    .similarityThreshold(0.0)  // Accept everything
+                    .similarityThreshold(0.0)
                     .build();
 
             List<Document> docs = vectorStore.similaritySearch(request);
