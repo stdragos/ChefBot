@@ -118,13 +118,28 @@ public class ChefAiService {
         String injectedPrompt = String.format("""
                 %s
                 
-                [SYSTEM INSTRUCTION: Check if this needs a recipe.
-                1. If yes, translate keywords to English, and then ALWAYS Call 'searchRecipesTool'.
-                2. YOU MUST RESPECT THE INGREDIENTS FROM THE RECIPE FOUND. DO NOT SUBSTITUTE INGREDIENTS UNLESS USER ASKS.
-                3. IF NO RECIPE IS FOUND, IMPROVISE A NEW RECIPE BASED ON USER REQUEST.
-                4. IMPORTANT: Once you have the recipe, rewrite it fully in the voice of **%s**. Be dramatic/funny/strict as per your persona!]
+                [WORKFLOW INSTRUCTIONS - FOLLOW EXACTLY:
+                Step 1: Call 'searchRecipesTool' to search the database.
+                Step 2: If database returns "No results found" or "No relevant recipes found in the database.":
+                   - Call 'webSearchTool' to search online
+                   - From the web results, extract a URL (look for links/URLs in the results)
+                   - Call 'fetchWebContentTool' with that URL to get the full recipe
+                Step 3: Use the EXACT recipe from the fetched content. Do NOT modify ingredients, quantities, or steps.
+                   - ONLY substitute ingredients if they violate the user's diet: %s
+                   - Otherwise, present the recipe EXACTLY as written on the website
+                Step 4: Present the recipe in the voice of %s.
+                
+                ⚠️ CRITICAL RULES - NEVER BREAK THESE:
+                - NEVER improvise, create, or invent recipes
+                - NEVER make up ingredients or steps
+                - ONLY use recipes from the tools (searchRecipesTool, webSearchTool, fetchWebContentTool)
+                - If ALL tools fail, apologize and ask user to try a different dish
+                - DO NOT create a recipe from scratch under ANY circumstances
+                
+                Respect the source recipe! Do NOT improvise or change it unless dietary restrictions require it.]
                 """,
                 currentMsg,
+                session.getDietType(),
                 session.getChefPersonality()
         );
         aiMessages.add(new UserMessage(injectedPrompt));
@@ -151,26 +166,40 @@ public class ChefAiService {
             
             %s
             
-            ### INSTRUCTIONS
-            1. **SEARCH:** Use 'searchRecipesTool' to find data.
-            2. **SOURCE OF TRUTH:** Use the tool data if available. Only improvise if the tool returns nothing.
-            3. **ADAPT RECIPES:** If a found recipe contains ingredients that violate the user's diet, you MUST substitute them appropriately.
+            ### INSTRUCTIONS (MANDATORY WORKFLOW)
+            1. **SEARCH DATABASE FIRST:** ALWAYS use 'searchRecipesTool' to search the local database.
+            2. **WEB SEARCH IF EMPTY:** If 'searchRecipesTool' returns "No results found", "No relevant recipes found in the database.", or empty results, you MUST:
+               a) Call 'webSearchTool' to search DuckDuckGo for recipes
+               b) Extract a URL from the search results
+               c) Call 'fetchWebContentTool' with that URL to get the full recipe
+            3. **RESPECT THE RECIPE:** You MUST use the exact recipe from the tools (database or website). Do NOT change ingredients, quantities, or steps UNLESS they violate dietary restrictions.
+            4. **ADAPT FOR DIET ONLY:** ONLY modify recipes if ingredients violate the user's diet restrictions (%s). Otherwise, present the recipe exactly as found.
+            5. **NEVER IMPROVISE:** You are FORBIDDEN from creating or improvising recipes. ALWAYS use recipes from the tools. If both database and web search fail, apologize and ask the user to try a different dish.
             
             ### TRANSPARENCY RULE (MANDATORY)
             You MUST explicitly state where the recipe comes from:
-            - **If found in DB:** Say something like "I found this verified recipe in my collection." (adapted to your voice).
-            - **If improvised:** Say something like "I couldn't find a recipe, so I created this one for you." (adapted to your voice).
+            - **If found in DB:** Say "I found this verified recipe in my collection." (adapted to your voice).
+            - **If fetched from web:** Say "I found this recipe online at [source]." (adapted to your voice).
+            - **If tools fail:** Say "I apologize, I couldn't find a recipe for that. Please try searching for a different dish." DO NOT improvise or create a recipe.
+            
+            ### ABSOLUTE PROHIBITION
+            **NEVER IMPROVISE RECIPES.** You are NOT allowed to create, invent, or make up recipes.
+            ONLY present recipes that come from 'searchRecipesTool', 'webSearchTool', or 'fetchWebContentTool'.
+            If all tools fail to find a recipe, you MUST apologize and decline to provide one.
             
             %s
             
             ### FINAL REMINDER
             Stay in character as **%s** at all times.
             ALWAYS respect the user's dietary restrictions - this is NON-NEGOTIABLE.
+            **NEVER, EVER IMPROVISE OR CREATE RECIPES** - this is STRICTLY FORBIDDEN.
+            ONLY use recipes from the tools. If no recipe is found, apologize and decline.
             """,
                 session.getChefPersonality(),
                 session.getDietType(),
                 session.getExcludedIngredients(),
                 memory,
+                session.getDietType(), // For the diet restriction reference in instruction 4
                 styleGuide,
                 session.getChefPersonality()
         );
@@ -180,6 +209,8 @@ public class ChefAiService {
         try {
             OllamaOptions options = OllamaOptions.builder()
                     .function("searchRecipesTool")
+                    .function("webSearchTool")
+                    .function("fetchWebContentTool")
                     .temperature(0.85)
                     .build();
 

@@ -42,7 +42,7 @@ public class McpRecipeServer {
             SearchRequest searchRequest = SearchRequest.builder()
                     .query(query)
                     .topK(5)
-                    .similarityThreshold(0.45)
+                    .similarityThreshold(0.65)
                     .filterExpression(b.eq("type", "web-recipe").build())
                     .build();
 
