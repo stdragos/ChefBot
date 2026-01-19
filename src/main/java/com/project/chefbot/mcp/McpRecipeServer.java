@@ -78,6 +78,11 @@ public class McpRecipeServer {
                         "searchRecipes",
                         "Search for recipes in the database based on ingredients or dish name. The query MUST be in ENGLISH.",
                         "/mcp/tools/searchRecipes?query={query}"
+                ),
+                new ToolInfo(
+                        "sendEmail",
+                        "Send an email with recipe content to the user's email address. Requires: to, subject, text.",
+                        "Docker: mcp/resend"
                 )
         ));
     }

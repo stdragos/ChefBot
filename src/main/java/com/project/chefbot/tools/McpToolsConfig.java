@@ -3,6 +3,7 @@ package com.project.chefbot.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.chefbot.mcp.McpConfig;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Description;
@@ -30,6 +31,15 @@ public class McpToolsConfig {
     private final RestClient restClient = RestClient.create();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Value("${resend.api.key}")
+    private String resendApiKey;
+
+    @Value("${resend.sender.email}")
+    private String senderEmail;
+
+    @Value("${resend.reply.to.email:}")
+    private String replyToEmail;
+
     public McpToolsConfig(McpConfig mcpConfig) {
         this.mcpConfig = mcpConfig;
     }
@@ -46,6 +56,10 @@ public class McpToolsConfig {
     // Records for DuckDuckGo fetch content
     public record FetchContentRequest(String url) {}
     public record FetchContentResponse(String content) {}
+
+    // Records for Resend email
+    public record SendEmailRequest(String to, String subject, String text) {}
+    public record SendEmailResponse(String result) {}
 
     @Bean
     @Description("Search for recipes in the database based on ingredients or dish name. The query MUST be in ENGLISH.")
@@ -357,6 +371,145 @@ public class McpToolsConfig {
                 System.err.println("[DuckDuckGo MCP] Fetch error: " + e.getClass().getName() + " - " + e.getMessage());
                 e.printStackTrace();
                 return new FetchContentResponse("Content fetch failed: " + e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Send an email using Resend MCP server.
+     * Use this to send recipes to the user when they request it.
+     */
+    @Bean
+    @Description("Send an email with recipe content to the user's email address. Use this when the user asks you to email them a recipe. Parameters: to (recipient email), subject (email subject), text (plain text content with the recipe).")
+    public Function<SendEmailRequest, SendEmailResponse> sendEmailTool() {
+        return request -> {
+            System.out.println("[Resend MCP] Sending email to: " + request.to());
+            System.out.println("[Resend MCP] Subject: " + request.subject());
+
+            try {
+                // Start Docker container with Resend MCP server
+                ProcessBuilder pb = new ProcessBuilder(
+                    "docker", "run", "-i", "--rm",
+                    "-e", "RESEND_API_KEY=" + resendApiKey,
+                    "-e", "SENDER_EMAIL_ADDRESS=" + senderEmail,
+                    "-e", "REPLY_TO_EMAIL_ADDRESSES=" + replyToEmail,
+                    "mcp/resend"
+                );
+                pb.redirectErrorStream(false);
+                Process process = pb.start();
+
+                BufferedWriter writer = new BufferedWriter(
+                    new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+                BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+
+                // Step 1: Send initialize request
+                Map<String, Object> initRequest = Map.of(
+                    "jsonrpc", "2.0",
+                    "id", 1,
+                    "method", "initialize",
+                    "params", Map.of(
+                        "protocolVersion", "2024-11-05",
+                        "capabilities", Map.of(),
+                        "clientInfo", Map.of("name", "chefbot", "version", "1.0.0")
+                    )
+                );
+                writer.write(objectMapper.writeValueAsString(initRequest));
+                writer.newLine();
+                writer.flush();
+
+                // Read init response
+                String initResponse = reader.readLine();
+                System.out.println("[Resend MCP] Init response: " + initResponse);
+
+                // Step 2: Send initialized notification
+                Map<String, Object> initializedNotification = Map.of(
+                    "jsonrpc", "2.0",
+                    "method", "notifications/initialized"
+                );
+                writer.write(objectMapper.writeValueAsString(initializedNotification));
+                writer.newLine();
+                writer.flush();
+
+                // Step 3: Call the send-email tool
+                Map<String, Object> toolRequest = Map.of(
+                    "jsonrpc", "2.0",
+                    "id", 2,
+                    "method", "tools/call",
+                    "params", Map.of(
+                        "name", "send-email",
+                        "arguments", Map.of(
+                            "to", request.to(),
+                            "subject", request.subject(),
+                            "text", request.text()
+                        )
+                    )
+                );
+                String toolJson = objectMapper.writeValueAsString(toolRequest);
+                System.out.println("[Resend MCP] Sending email request: " + toolJson);
+                writer.write(toolJson);
+                writer.newLine();
+                writer.flush();
+
+                // Read responses - find the response with "id":2
+                String toolResponse = null;
+                String line;
+                int lineCount = 0;
+                while ((line = reader.readLine()) != null) {
+                    lineCount++;
+                    System.out.println("[Resend MCP] Line " + lineCount + ": " + line);
+
+                    if (line.contains("\"id\":2")) {
+                        toolResponse = line;
+                        System.out.println("[Resend MCP] Found email response!");
+                        break;
+                    }
+                }
+
+                // Close streams and cleanup
+                writer.close();
+                reader.close();
+
+                // Wait for process to complete
+                boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+                if (!finished) {
+                    process.destroyForcibly();
+                    return new SendEmailResponse("Email sending timed out.");
+                }
+
+                if (toolResponse == null || toolResponse.isEmpty()) {
+                    return new SendEmailResponse("No response from email service.");
+                }
+
+                // Parse JSON-RPC response
+                JsonNode jsonResponse = objectMapper.readTree(toolResponse);
+                if (jsonResponse.has("result")) {
+                    JsonNode result = jsonResponse.get("result");
+                    if (result.has("content") && result.get("content").isArray()) {
+                        StringBuilder resultBuilder = new StringBuilder();
+                        for (JsonNode content : result.get("content")) {
+                            if (content.has("text")) {
+                                resultBuilder.append(content.get("text").asText()).append("\n");
+                            }
+                        }
+                        String resultText = resultBuilder.toString().trim();
+                        System.out.println("[Resend MCP] Email sent successfully: " + resultText);
+                        return new SendEmailResponse(resultText.isEmpty() ? "Email sent successfully!" : resultText);
+                    }
+                }
+
+                if (jsonResponse.has("error")) {
+                    String errorMsg = "Email sending error: " + jsonResponse.get("error").toString();
+                    System.err.println("[Resend MCP] " + errorMsg);
+                    return new SendEmailResponse(errorMsg);
+                }
+
+                return new SendEmailResponse("Email sent, but no confirmation received.");
+
+            } catch (Exception e) {
+                System.err.println("[Resend MCP] Error: " + e.getClass().getName() + " - " + e.getMessage());
+                e.printStackTrace();
+                return new SendEmailResponse("Email sending failed: " + e.getMessage());
             }
         };
     }

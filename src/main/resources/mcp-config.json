@@ -17,6 +17,35 @@
           "description": "The search query for finding recipes"
         }
       }
+    },
+    "sendEmail": {
+      "name": "sendEmail",
+      "description": "Send an email with recipe content to the user's email address using Resend MCP server via Docker.",
+      "docker": {
+        "image": "mcp/resend",
+        "env": {
+          "RESEND_API_KEY": "${resend.api.key}",
+          "SENDER_EMAIL_ADDRESS": "${resend.sender.email}",
+          "REPLY_TO_EMAIL_ADDRESSES": "${resend.reply.to.email}"
+        }
+      },
+      "parameters": {
+        "to": {
+          "type": "string",
+          "required": true,
+          "description": "Recipient email address"
+        },
+        "subject": {
+          "type": "string",
+          "required": true,
+          "description": "Email subject line"
+        },
+        "text": {
+          "type": "string",
+          "required": true,
+          "description": "Plain text email content with the recipe"
+        }
+      }
     }
   }
 }

@@ -93,7 +93,7 @@ public class ConversationVectorService {
             SearchRequest.Builder requestBuilder = SearchRequest.builder()
                     .query(query)
                     .topK(topK)
-                    .similarityThreshold(0.5);
+                    .similarityThreshold(0.8);
 
             // Filter by userId to only search current user's conversations
             if (userId != null) {

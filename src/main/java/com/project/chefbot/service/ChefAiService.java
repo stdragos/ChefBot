@@ -115,33 +115,36 @@ public class ChefAiService {
             }
         }
 
-        String injectedPrompt = String.format("""
-                %s
+        String lowerMsg = currentMsg.toLowerCase();
+        boolean hasEmailRequest = lowerMsg.contains("send") || lowerMsg.contains("email") || lowerMsg.contains("mail");
+
+        String injectedPrompt;
+        if (hasEmailRequest) {
+            injectedPrompt = String.format("""
+                USER REQUEST: "%s"
                 
-                [WORKFLOW INSTRUCTIONS - FOLLOW EXACTLY:
-                Step 1: Call 'searchRecipesTool' to search the database.
-                Step 2: If database returns "No results found" or "No relevant recipes found in the database.":
-                   - Call 'webSearchTool' to search online
-                   - From the web results, extract a URL (look for links/URLs in the results)
-                   - Call 'fetchWebContentTool' with that URL to get the full recipe
-                Step 3: Use the EXACT recipe from the fetched content. Do NOT modify ingredients, quantities, or steps.
-                   - ONLY substitute ingredients if they violate the user's diet: %s
-                   - Otherwise, present the recipe EXACTLY as written on the website
-                Step 4: Present the recipe in the voice of %s.
+                STEPS:
+                1. Search for the recipe using searchRecipesTool
+                2. If no results, use webSearchTool then fetchWebContentTool
+                3. Call sendEmailTool with the email address from the user's message, subject, and full recipe text
+                4. Confirm to the user that the email was sent
+                """,
+                currentMsg
+            );
+        } else {
+            injectedPrompt = String.format("""
+                USER REQUEST: "%s"
                 
-                ⚠️ CRITICAL RULES - NEVER BREAK THESE:
-                - NEVER improvise, create, or invent recipes
-                - NEVER make up ingredients or steps
-                - ONLY use recipes from the tools (searchRecipesTool, webSearchTool, fetchWebContentTool)
-                - If ALL tools fail, apologize and ask user to try a different dish
-                - DO NOT create a recipe from scratch under ANY circumstances
-                
-                Respect the source recipe! Do NOT improvise or change it unless dietary restrictions require it.]
+                STEPS:
+                1. Search for the recipe using searchRecipesTool
+                2. If no results found, use webSearchTool to search online
+                3. If web search returns URLs, use fetchWebContentTool to get the recipe
+                4. Present the recipe to the user (adapt for diet: %s)
                 """,
                 currentMsg,
-                session.getDietType(),
-                session.getChefPersonality()
-        );
+                session.getDietType()
+            );
+        }
         aiMessages.add(new UserMessage(injectedPrompt));
 
         return aiMessages;
@@ -151,57 +154,37 @@ public class ChefAiService {
         String styleGuide = getPersonaStyle(session.getChefPersonality());
 
         return String.format("""
-            ### MISSION
-            You are **%s**.
-            Your goal is to guide the user through cooking, strictly adhering to your specific persona.
+            You are %s, a cooking assistant.
             
-            ### USER CONTEXT (STRICT - MUST BE RESPECTED)
-            Diet: %s | Allergies: %s.
-            
-            *CRITICAL DIETARY RESTRICTION RULE:**
-            The user's diet type and allergies are ABSOLUTE CONSTRAINTS. You MUST:
-            - NEVER suggest ingredients that violate the user's diet (e.g., no meat for Vegetarian, no animal products for Vegan).
-            - ALWAYS substitute non-compliant ingredients with diet-appropriate alternatives.
-            - If past conversations mention non-compliant ingredients, IGNORE those and adapt to current dietary restrictions.
+            User diet: %s | Allergies: %s
             
             %s
             
-            ### INSTRUCTIONS (MANDATORY WORKFLOW)
-            1. **SEARCH DATABASE FIRST:** ALWAYS use 'searchRecipesTool' to search the local database.
-            2. **WEB SEARCH IF EMPTY:** If 'searchRecipesTool' returns "No results found", "No relevant recipes found in the database.", or empty results, you MUST:
-               a) Call 'webSearchTool' to search DuckDuckGo for recipes
-               b) Extract a URL from the search results
-               c) Call 'fetchWebContentTool' with that URL to get the full recipe
-            3. **RESPECT THE RECIPE:** You MUST use the exact recipe from the tools (database or website). Do NOT change ingredients, quantities, or steps UNLESS they violate dietary restrictions.
-            4. **ADAPT FOR DIET ONLY:** ONLY modify recipes if ingredients violate the user's diet restrictions (%s). Otherwise, present the recipe exactly as found.
-            5. **NEVER IMPROVISE:** You are FORBIDDEN from creating or improvising recipes. ALWAYS use recipes from the tools. If both database and web search fail, apologize and ask the user to try a different dish.
+            You have 4 tools available:
+            - searchRecipesTool: Search local recipe database
+            - webSearchTool: Search the web for recipes
+            - fetchWebContentTool: Get full content from a URL
+            - sendEmailTool: Send email with recipe (params: to, subject, text)
             
-            ### TRANSPARENCY RULE (MANDATORY)
-            You MUST explicitly state where the recipe comes from:
-            - **If found in DB:** Say "I found this verified recipe in my collection." (adapted to your voice).
-            - **If fetched from web:** Say "I found this recipe online at [source]." (adapted to your voice).
-            - **If tools fail:** Say "I apologize, I couldn't find a recipe for that. Please try searching for a different dish." DO NOT improvise or create a recipe.
+            When user asks for a recipe:
+            1. Use searchRecipesTool first
+            2. If no results, use webSearchTool then fetchWebContentTool
+            3. Present the recipe, respecting diet restrictions
             
-            ### ABSOLUTE PROHIBITION
-            **NEVER IMPROVISE RECIPES.** You are NOT allowed to create, invent, or make up recipes.
-            ONLY present recipes that come from 'searchRecipesTool', 'webSearchTool', or 'fetchWebContentTool'.
-            If all tools fail to find a recipe, you MUST apologize and decline to provide one.
+            When user asks to EMAIL a recipe:
+            1. Get the recipe (steps above)
+            2. Call sendEmailTool with the email address, subject, and full recipe text
+            3. Confirm the email was sent
+            
+            Never make up recipes. Only use recipes from the tools.
             
             %s
-            
-            ### FINAL REMINDER
-            Stay in character as **%s** at all times.
-            ALWAYS respect the user's dietary restrictions - this is NON-NEGOTIABLE.
-            **NEVER, EVER IMPROVISE OR CREATE RECIPES** - this is STRICTLY FORBIDDEN.
-            ONLY use recipes from the tools. If no recipe is found, apologize and decline.
             """,
                 session.getChefPersonality(),
                 session.getDietType(),
                 session.getExcludedIngredients(),
                 memory,
-                session.getDietType(), // For the diet restriction reference in instruction 4
-                styleGuide,
-                session.getChefPersonality()
+                styleGuide
         );
     }
 
@@ -211,6 +194,7 @@ public class ChefAiService {
                     .function("searchRecipesTool")
                     .function("webSearchTool")
                     .function("fetchWebContentTool")
+                    .function("sendEmailTool")
                     .temperature(0.85)
                     .build();
 
@@ -287,7 +271,6 @@ public class ChefAiService {
                 - **Example:** "This salad is packed with antioxidants to fuel your cells!"
                 """;
         } else {
-            // Fallback
             return "### STYLE GUIDE\nTone: Professional and helpful chef.";
         }
     }
