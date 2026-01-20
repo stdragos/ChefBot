@@ -1,18 +1,17 @@
 version: '3.8'
 
 services:
-  chromadb:
-    image: chromadb/chroma:0.4.15
-    container_name: chefbot-chroma
-    command: /bin/bash -c "pip install 'numpy<2.0.0' && uvicorn chromadb.app:app --host 0.0.0.0 --port 8000"
-
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chefbot-postgres
     ports:
-      - "8000:8000"
+      - "5432:5432"
     volumes:
-      - chroma-data:/chroma/chroma
+      - postgres-data:/var/lib/postgresql/data
     environment:
-      - IS_PERSISTENT=TRUE
-      - ALLOW_RESET=TRUE
+      - POSTGRES_DB=chefbot
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     networks:
       - chefbot-net
     restart: always
@@ -40,5 +39,5 @@ networks:
     driver: bridge
 
 volumes:
-  chroma-data:
+  postgres-data:
   ollama-data:

@@ -14,8 +14,10 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.ollama.api.OllamaOptions;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,17 +34,36 @@ public class ChefAiService {
     private final ChatMessageRepository messageRepo;
     private final ConversationVectorService vectorService;
     private final UserRepository userRepo;
+    private final List<ToolCallback> toolCallbacks;
 
     public ChefAiService(ChatModel chatModel,
                          CookingSessionRepository sessionRepo,
                          ChatMessageRepository messageRepo,
                          @Autowired(required = false) ConversationVectorService vectorService,
-                         UserRepository userRepo) {
+                         UserRepository userRepo,
+                         @Autowired(required = false) @Qualifier("mcpTools") List<ToolCallback> mcpTools,
+                         @Autowired(required = false) @Qualifier("localToolCallbacks") List<ToolCallback> localTools) {
         this.chatModel = chatModel;
         this.sessionRepo = sessionRepo;
         this.messageRepo = messageRepo;
         this.vectorService = vectorService;
         this.userRepo = userRepo;
+
+        // Combine MCP tools and local tools
+        List<ToolCallback> allTools = new ArrayList<>();
+        if (mcpTools != null) allTools.addAll(mcpTools);
+        if (localTools != null) allTools.addAll(localTools);
+        this.toolCallbacks = allTools;
+
+        // Log available tools at startup
+        if (this.toolCallbacks.isEmpty()) {
+            System.out.println("[ChefAiService] No tools available");
+        } else {
+            System.out.println("[ChefAiService] Available tools (" + this.toolCallbacks.size() + "): " +
+                this.toolCallbacks.stream()
+                    .map(tc -> tc.getToolDefinition().name())
+                    .collect(Collectors.joining(", ")));
+        }
     }
 
     public Long createSession(CreateSessionRequest request) {
@@ -72,7 +93,9 @@ public class ChefAiService {
 
         List<Message> aiMessages = buildConversationContext(session, longTermMemory, userMessageText);
 
-        String aiResponse = callAiModel(aiMessages);
+        // Check if user provided an email address
+        boolean hasEmail = userMessageText.matches(".*[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}.*");
+        String aiResponse = callAiModel(aiMessages, hasEmail);
 
         saveMessage(session, aiResponse, "AI");
         updateLongTermMemory(session, sessionId);
@@ -115,37 +138,8 @@ public class ChefAiService {
             }
         }
 
-        String lowerMsg = currentMsg.toLowerCase();
-        boolean hasEmailRequest = lowerMsg.contains("send") || lowerMsg.contains("email") || lowerMsg.contains("mail");
-
-        String injectedPrompt;
-        if (hasEmailRequest) {
-            injectedPrompt = String.format("""
-                USER REQUEST: "%s"
-                
-                STEPS:
-                1. Search for the recipe using searchRecipesTool
-                2. If no results, use webSearchTool then fetchWebContentTool
-                3. Call sendEmailTool with the email address from the user's message, subject, and full recipe text
-                4. Confirm to the user that the email was sent
-                """,
-                currentMsg
-            );
-        } else {
-            injectedPrompt = String.format("""
-                USER REQUEST: "%s"
-                
-                STEPS:
-                1. Search for the recipe using searchRecipesTool
-                2. If no results found, use webSearchTool to search online
-                3. If web search returns URLs, use fetchWebContentTool to get the recipe
-                4. Present the recipe to the user (adapt for diet: %s)
-                """,
-                currentMsg,
-                session.getDietType()
-            );
-        }
-        aiMessages.add(new UserMessage(injectedPrompt));
+        // Just pass the user's message directly - let the LLM decide what to do
+        aiMessages.add(new UserMessage(currentMsg));
 
         return aiMessages;
     }
@@ -156,50 +150,49 @@ public class ChefAiService {
         return String.format("""
             You are %s, a cooking assistant.
             
-            User diet: %s | Allergies: %s
-            
             %s
             
-            You have 4 tools available:
-            - searchRecipesTool: Search local recipe database
-            - webSearchTool: Search the web for recipes
-            - fetchWebContentTool: Get full content from a URL
-            - sendEmailTool: Send email with recipe (params: to, subject, text)
+            User diet: %s
+            Allergies: %s
             
-            When user asks for a recipe:
-            1. Use searchRecipesTool first
-            2. If no results, use webSearchTool then fetchWebContentTool
-            3. Present the recipe, respecting diet restrictions
+            RULES:
+            1. Use searchRecipes first. If no results, use search tool, then fetch_content.
+            2. Write ALL responses as %s would talk.
             
-            When user asks to EMAIL a recipe:
-            1. Get the recipe (steps above)
-            2. Call sendEmailTool with the email address, subject, and full recipe text
-            3. Confirm the email was sent
-            
-            Never make up recipes. Only use recipes from the tools.
-            
-            %s
+            Past conversations: %s
             """,
                 session.getChefPersonality(),
+                styleGuide,
                 session.getDietType(),
                 session.getExcludedIngredients(),
-                memory,
-                styleGuide
+                session.getChefPersonality(),
+                memory.isEmpty() ? "None" : memory
         );
     }
 
-    private String callAiModel(List<Message> messages) {
+    private String callAiModel(List<Message> messages, boolean includeEmailTool) {
         try {
-            OllamaOptions options = OllamaOptions.builder()
-                    .function("searchRecipesTool")
-                    .function("webSearchTool")
-                    .function("fetchWebContentTool")
-                    .function("sendEmailTool")
-                    .temperature(0.85)
-                    .build();
+            OllamaChatOptions.Builder optionsBuilder = OllamaChatOptions.builder()
+                    .temperature(0.85);
 
-            Prompt prompt = new Prompt(messages, options);
-            return chatModel.call(prompt).getResult().getOutput().getContent();
+            // Filter tools - only include email tool if user provided an email address
+            if (!toolCallbacks.isEmpty()) {
+                List<ToolCallback> filteredTools;
+                if (includeEmailTool) {
+                    filteredTools = toolCallbacks;
+                } else {
+                    filteredTools = toolCallbacks.stream()
+                            .filter(tc -> !tc.getToolDefinition().name().equals("send-email"))
+                            .collect(Collectors.toList());
+                }
+                System.out.println("[ChefAiService] Tools for this request: " +
+                    filteredTools.stream().map(t -> t.getToolDefinition().name()).collect(Collectors.joining(", ")));
+                optionsBuilder.toolCallbacks(filteredTools);
+            }
+
+
+            Prompt prompt = new Prompt(messages, optionsBuilder.build());
+            return chatModel.call(prompt).getResult().getOutput().getText();
         } catch (Exception e) {
             e.printStackTrace();
             return "I am sorry, my kitchen is on fire (Internal Error): " + e.getMessage();
@@ -236,42 +229,42 @@ public class ChefAiService {
     }
 
     private String getPersonaStyle(String personality) {
-        if (personality == null) return "Tone: Helpful and polite.";
+        if (personality == null) return "Be helpful and polite.";
 
         if (personality.contains("Gordon Ramsay")) {
             return """
-                ### STYLE GUIDE (STRICT & AGGRESSIVE)
-                - **Tone:** URGENT, LOUD, PERFECTIONIST.
-                - **Vocabulary:** "Raw!", "Disaster!", "Wake up!", "Pan!", "Move it!".
-                - **Behavior:** Insult bad technique, demand perfection.
-                - **Example:** "Listen to me! Chop that onion properly or get out!"
+                SPEAK LIKE GORDON RAMSAY:
+                - Be intense, loud, demanding
+                - Use: "Come on!", "It's RAW!", "Donkey!", "Beautiful!", "Move it!"
+                - Yell at bad cooking, praise good technique
+                - Example step: "Get that pan SMOKING hot! If it's not hot, don't even THINK about cooking!"
                 """;
         } else if (personality.contains("Grandma")) {
             return """
-                ### STYLE GUIDE (WARM & TRADITIONAL)
-                - **Tone:** Sweet, Nurturing, Nostalgic, Slow-paced.
-                - **Vocabulary:** "Sweetie", "Darling", "With love", "Secret ingredient", "Just a pinch".
-                - **Behavior:** Treat the user like your grandchild. Focus on love and comfort food.
-                - **Example:** "Now, sweetie, make sure you add a little bit of butter for the soul."
+                SPEAK LIKE A LOVING GRANDMA:
+                - Be warm, gentle, full of love
+                - Use: "Sweetie", "Darling", "Dear", "Just like mama made"
+                - Share little stories and memories
+                - Example step: "Now sweetie, stir this gently with love - that's the secret ingredient!"
                 """;
         } else if (personality.contains("French Chef")) {
             return """
-                ### STYLE GUIDE (SOPHISTICATED & ARROGANT)
-                - **Tone:** Haughty, Technical, Elegant, slightly Condescending.
-                - **Vocabulary:** Use French culinary terms ("Mise en place", "Sauté", "Voilà").
-                - **Behavior:** Obsess over technique and quality of ingredients.
-                - **Example:** "Be careful with the soufflé, it requires absolute precision, non?"
+                SPEAK LIKE A FRENCH CHEF:
+                - Be elegant, sophisticated, a bit snobby
+                - Use French words: "Magnifique!", "Mon ami", "Voilà", "Sacré bleu!"
+                - Obsess over technique and quality
+                - Example step: "Ah, now we sauté with precision - not too fast, not too slow, parfait!"
                 """;
         } else if (personality.contains("Nutritionist")) {
             return """
-                ### STYLE GUIDE (HEALTHY & SCIENTIFIC)
-                - **Tone:** Informative, Encouraging, Educational.
-                - **Vocabulary:** "Macros", "Vitamins", "Balanced", "Energy", "Fiber".
-                - **Behavior:** Explain *why* the food is good for the body.
-                - **Example:** "This salad is packed with antioxidants to fuel your cells!"
+                SPEAK LIKE A NUTRITIONIST:
+                - Be informative and encouraging
+                - Explain health benefits of ingredients
+                - Use: "antioxidants", "protein", "vitamins", "fuel your body"
+                - Example step: "Add the spinach - packed with iron for energy!"
                 """;
         } else {
-            return "### STYLE GUIDE\nTone: Professional and helpful chef.";
+            return "Be a helpful, professional chef.";
         }
     }
 }

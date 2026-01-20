@@ -103,7 +103,7 @@ public class ScraperService {
             """, pageText);
 
         try {
-            String jsonResponse = chatModel.call(new Prompt(promptText)).getResult().getOutput().getContent();
+            String jsonResponse = chatModel.call(new Prompt(promptText)).getResult().getOutput().getText();
 
             System.out.println("[Scraper] Extracted recipe (" + jsonResponse + ").");
 
