@@ -17,7 +17,6 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,19 +40,27 @@ public class ChefAiService {
                          ChatMessageRepository messageRepo,
                          @Autowired(required = false) ConversationVectorService vectorService,
                          UserRepository userRepo,
-                         @Autowired(required = false) @Qualifier("mcpTools") List<ToolCallback> mcpTools,
-                         @Autowired(required = false) @Qualifier("localToolCallbacks") List<ToolCallback> localTools) {
+                         @Autowired(required = false) List<ToolCallback> allToolCallbacks) {
         this.chatModel = chatModel;
         this.sessionRepo = sessionRepo;
         this.messageRepo = messageRepo;
         this.vectorService = vectorService;
         this.userRepo = userRepo;
 
-        // Combine MCP tools and local tools
-        List<ToolCallback> allTools = new ArrayList<>();
-        if (mcpTools != null) allTools.addAll(mcpTools);
-        if (localTools != null) allTools.addAll(localTools);
-        this.toolCallbacks = allTools;
+        // Use all tool callbacks (Spring AI auto-injects all ToolCallback beans)
+        if (allToolCallbacks != null) {
+            // Remove duplicates by name
+            this.toolCallbacks = allToolCallbacks.stream()
+                    .collect(Collectors.toMap(
+                            tc -> tc.getToolDefinition().name(),
+                            tc -> tc,
+                            (existing, replacement) -> existing))
+                    .values()
+                    .stream()
+                    .collect(Collectors.toList());
+        } else {
+            this.toolCallbacks = new ArrayList<>();
+        }
 
         // Log available tools at startup
         if (this.toolCallbacks.isEmpty()) {
@@ -88,17 +95,36 @@ public class ChefAiService {
 
         saveMessage(session, userMessageText, "USER");
 
+        // Manual email check - only allow email tool if request is valid
+        boolean allowEmailTool = isValidEmailRequest(userMessageText);
+
         Long userId = session.getUser() != null ? session.getUser().getId() : null;
         String longTermMemory = retrieveLongTermMemory(userMessageText, userId);
 
         List<Message> aiMessages = buildConversationContext(session, longTermMemory, userMessageText);
 
-        // Check if user provided an email address
-        boolean hasEmail = userMessageText.matches(".*[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}.*");
-        String aiResponse = callAiModel(aiMessages, hasEmail);
+        String aiResponse = callAiModel(aiMessages, allowEmailTool);
 
         saveMessage(session, aiResponse, "AI");
         updateLongTermMemory(session, sessionId);
+    }
+
+    private boolean isValidEmailRequest(String message) {
+        String lowerMsg = message.toLowerCase();
+
+        // Check if user is requesting to send an email
+        boolean wantsEmail = lowerMsg.contains("email") || lowerMsg.contains("send to") || lowerMsg.contains("mail");
+
+        if (!wantsEmail) {
+            return false; // Not an email request, don't enable tool
+        }
+
+        // Check if the allowed email is mentioned
+        boolean hasValidEmail = message.contains("dragos.stanica.sd@gmail.com");
+
+        System.out.println("[Email Check] Email request detected: " + wantsEmail + ", Valid recipient: " + hasValidEmail);
+
+        return hasValidEmail;
     }
 
     private String retrieveLongTermMemory(String query, Long userId) {
@@ -155,9 +181,23 @@ public class ChefAiService {
             User diet: %s
             Allergies: %s
             
-            RULES:
-            1. Use searchRecipes first. If no results, use search tool, then fetch_content.
-            2. Write ALL responses as %s would talk.
+            CRITICAL RULES (MUST FOLLOW):
+            1. Recipe search workflow: 
+               - Always call searchRecipes first
+               - If searchRecipes returns empty or irrelevant results, use search to find URLs
+               - If search returns URLs, YOU MUST call fetch_content on the URL before doing anything else
+            
+            2. Email workflow - MANDATORY STEPS IN ORDER:
+               Step 1: Get recipe using searchRecipes OR (search then fetch_content)
+               Step 2: Wait for the recipe content to be returned
+               Step 3: ONLY AFTER you have the full recipe text, call send-email with that content
+               
+               NEVER skip fetch_content when search returns a URL!
+               NEVER call send-email without the full recipe in your possession!
+               Only send to dragos.stanica.sd@gmail.com
+            
+            3. Write ALL responses as %s would talk.
+            4. If email fails, apologize without technical details.
             
             Past conversations: %s
             """,
@@ -170,24 +210,26 @@ public class ChefAiService {
         );
     }
 
-    private String callAiModel(List<Message> messages, boolean includeEmailTool) {
+    private String callAiModel(List<Message> messages, boolean allowEmailTool) {
         try {
             OllamaChatOptions.Builder optionsBuilder = OllamaChatOptions.builder()
                     .temperature(0.85);
 
-            // Filter tools - only include email tool if user provided an email address
             if (!toolCallbacks.isEmpty()) {
-                List<ToolCallback> filteredTools;
-                if (includeEmailTool) {
-                    filteredTools = toolCallbacks;
+                // Filter tools - only include email tool if validation passed
+                List<ToolCallback> activeTools;
+                if (allowEmailTool) {
+                    activeTools = toolCallbacks;
                 } else {
-                    filteredTools = toolCallbacks.stream()
-                            .filter(tc -> !tc.getToolDefinition().name().equals("send-email"))
+                    activeTools = toolCallbacks.stream()
+                            .filter(tc -> !tc.getToolDefinition().name().toLowerCase().contains("email")
+                                       && !tc.getToolDefinition().name().toLowerCase().contains("send"))
                             .collect(Collectors.toList());
                 }
+
                 System.out.println("[ChefAiService] Tools for this request: " +
-                    filteredTools.stream().map(t -> t.getToolDefinition().name()).collect(Collectors.joining(", ")));
-                optionsBuilder.toolCallbacks(filteredTools);
+                    activeTools.stream().map(t -> t.getToolDefinition().name()).collect(Collectors.joining(", ")));
+                optionsBuilder.toolCallbacks(activeTools);
             }
 
 
