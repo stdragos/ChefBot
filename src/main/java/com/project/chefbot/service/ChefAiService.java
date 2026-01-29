@@ -47,7 +47,6 @@ public class ChefAiService {
         this.vectorService = vectorService;
         this.userRepo = userRepo;
 
-        // Use all tool callbacks (Spring AI auto-injects all ToolCallback beans)
         if (allToolCallbacks != null) {
             // Remove duplicates by name
             this.toolCallbacks = new ArrayList<>(allToolCallbacks.stream()
@@ -60,7 +59,6 @@ public class ChefAiService {
             this.toolCallbacks = new ArrayList<>();
         }
 
-        // Log available tools at startup
         if (this.toolCallbacks.isEmpty()) {
             System.out.println("[ChefAiService] No tools available");
         } else {
@@ -124,7 +122,7 @@ public class ChefAiService {
         String systemText = createSystemPrompt(session, memory);
 
         List<ChatMessage> history = messageRepo.findBySessionIdOrderByTimestampAsc(session.getId());
-        int windowSize = 10;  // Reduced for faster processing
+        int windowSize = 10;
         if (history.size() > windowSize) {
             history = history.subList(history.size() - windowSize, history.size());
         }
@@ -177,24 +175,36 @@ public class ChefAiService {
                SOURCES: Always include where the recipe came from at the end
             4. SCOPE: ONLY cooking/food/recipes/nutrition - decline others in character
             5. EMAIL (ABSOLUTE - READ CAREFULLY):
+               EMAIL RESTRICTION: You can ONLY send emails to dragos.stanica.sd@gmail.com - NO OTHER EMAIL ADDRESS IS ALLOWED!
+               
                BEFORE calling send-email, check ALL of these:
                [CHECK] Did user use word "send", "email", or "mail" IN CURRENT MESSAGE? (must be YES)
-               [CHECK] Did user provide an email address IN CURRENT MESSAGE? (must be YES)
+               [CHECK] Did user provide email address "dragos.stanica.sd@gmail.com" EXACTLY IN CURRENT MESSAGE? (must be YES)
                [CHECK] Is this ONLY about showing/presenting a recipe? (if YES → NO EMAIL)
 
                IGNORE emails from past conversations or memory - only CURRENT message matters!
+
+               IF USER PROVIDES WRONG EMAIL:
+               - DO NOT reveal the correct email address
+               - Simply say: "I'm sorry, but I can only send recipes to authorized email addresses. Would you like me to show you the recipe here instead?"
+               - NEVER suggest or hint at the correct email
+               - Stay in character while declining
 
                NO EMAIL: "I want to cook X"
                NO EMAIL: "Show me X recipe"
                NO EMAIL: "Best recipe for X"
                NO EMAIL: Just talking about recipes
-               YES EMAIL: "Send this to john@email.com"
-               YES EMAIL: "Email the recipe to me@email.com"
+               NO EMAIL: "Send this to john@email.com" (wrong email)
+               NO EMAIL: "Email to any-other-address@email.com" (wrong email)
+               YES EMAIL: "Send this to dragos.stanica.sd@gmail.com" (correct email only!)
+               YES EMAIL: "Email the recipe to dragos.stanica.sd@gmail.com" (correct email only!)
 
-               WHEN SENDING EMAIL: Include the COMPLETE recipe (ALL ingredients, ALL steps, cooking times, temperatures, and SOURCE)
+               WHEN SENDING EMAIL (only to dragos.stanica.sd@gmail.com): Include the COMPLETE recipe (ALL ingredients, ALL steps, cooking times, temperatures, and SOURCE).
                Never send partial recipes or summaries - the email must have everything needed to cook the dish!
+               
+               IF EMAIL TOOL FAILS: The email service may have restrictions. Inform the user that the email couldn't be sent and offer to show the recipe instead.
 
-               DEFAULT: If unsure → DO NOT send email, just present recipe
+               DEFAULT: If unsure or wrong email → DO NOT send email, just present recipe (without revealing correct email)
             
             CRITICAL: ALLERGIES ARE LIFE-THREATENING - Check every ingredient first! Never invent recipes. Try searchRecipes first, then web if needed. Replace dietary violations. NO EMAILS unless explicitly asked with address! ALWAYS cite sources!
             NEVER INVENT RECIPES - if you don't find recipes in DB, use the web search tool to find real ones.
@@ -204,8 +214,8 @@ public class ChefAiService {
                 session.getChefPersonality(),
                 session.getDietType(),
                 session.getExcludedIngredients(),
-                session.getExcludedIngredients(),  // Repeat for emphasis in allergy warning
-                session.getExcludedIngredients(),  // Repeat in rule #2
+                session.getExcludedIngredients(),
+                session.getExcludedIngredients(),
                 memory.isEmpty() ? "" : "\nPast: " + memory.substring(0, Math.min(200, memory.length()))
         );
     }
@@ -245,7 +255,6 @@ public class ChefAiService {
 
     public CookingSession getSessionInfo(Long id) { return sessionRepo.findById(id).orElseThrow(); }
     public List<ChatMessage> getMessagesForSession(Long sessionId) { return messageRepo.findBySessionIdOrderByTimestampAsc(sessionId); }
-    public List<CookingSession> getAllSessions() { return sessionRepo.findAll(); }
     public List<CookingSession> getSessionsForUser(Long userId) { return sessionRepo.findByUserId(userId); }
 
     public void deleteSession(Long sessionId, Long userId) {

@@ -4,11 +4,15 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Configuration for the remote Recipe MCP Server using streamable HTTP transport.
@@ -30,7 +34,7 @@ public class RecipeMcpClientConfig {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build();
 
-        // Initialize connection but swallow SSE/406 noise so the app keeps running
+        // Initialize connection
         try {
             client.initialize();
             System.out.println("[RecipeMCP] Connected to Recipe MCP Server at " + recipeMcpServerUrl);
@@ -38,7 +42,6 @@ public class RecipeMcpClientConfig {
             System.err.println("[RecipeMCP] Initialization warning (continuing): " + e.getMessage());
         }
 
-        // Log available tools
         try {
             var tools = client.listTools();
             if (tools != null && tools.tools() != null) {
@@ -53,5 +56,23 @@ public class RecipeMcpClientConfig {
         }
 
         return client;
+    }
+
+    /**
+     * Creates tool callbacks from the recipe MCP client.
+     */
+    @Bean(name = "recipeToolCallbacks")
+    public List<ToolCallback> recipeToolCallbacks(McpSyncClient recipeMcpClient) {
+        try {
+            List<ToolCallback> callbacks = SyncMcpToolCallbackProvider.syncToolCallbacks(List.of(recipeMcpClient));
+            System.out.println("[RecipeMCP] Created " + callbacks.size() + " recipe tool(s): " +
+                    callbacks.stream()
+                            .map(tc -> tc.getToolDefinition().name())
+                            .collect(Collectors.joining(", ")));
+            return callbacks;
+        } catch (Exception e) {
+            System.err.println("[RecipeMCP] Failed to create recipe tools: " + e.getMessage());
+            return List.of();
+        }
     }
 }

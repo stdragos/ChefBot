@@ -84,7 +84,7 @@ public class KnowledgeBaseService {
                 ExtractedRecipe recipe = scraperService.scrapeUrl(url);
 
                 if (recipe != null) {
-                    // Save in ChromaDB
+                    // Svae in pgvector
                     System.out.println("Processing and saving recipe from URL: " + url);
                     System.out.println(recipe);
                     Document doc = getDoc(url, recipe);

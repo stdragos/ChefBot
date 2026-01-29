@@ -434,7 +434,7 @@
         </div>
 
         <div class="chat-box" id="chatWindow">
-            <div th:if="${messagesList == null or messagesList.isEmpty()}" class="text-center mt-5" style="color: #666;">
+            <div id="welcomeMessage" th:if="${messagesList == null or messagesList.isEmpty()}" class="text-center mt-5" style="color: #666;">
                 <h4 style="color: #eee;">Hello!</h4>
                 <p>Tell me what ingredients you have available.</p>
             </div>
@@ -469,8 +469,9 @@
 
         <div class="input-area">
             <form id="chatForm" th:action="@{'/chef/chat/' + ${sessionId}}" method="post">
+                <input type="hidden" name="message" id="hiddenMessage">
                 <div class="input-group-clean" id="inputGroup">
-                    <input type="text" name="message" id="msgInput" class="chat-input" placeholder="Type your message..." required autocomplete="off" autofocus>
+                    <input type="text" id="msgInput" class="chat-input" placeholder="Type your message..." required autocomplete="off" autofocus>
                     <button type="submit" id="btnSend" class="btn-send">
                         <span class="spinner-loader" id="btnSpinner"></span>
                         <span id="btnText">Send</span>
@@ -516,20 +517,50 @@
         const btnText = document.getElementById('btnText');
         const btnSpinner = document.getElementById('btnSpinner');
         const msgInput = document.getElementById('msgInput');
+        const hiddenMessage = document.getElementById('hiddenMessage');
         const inputGroup = document.getElementById('inputGroup');
         const loadingBubble = document.getElementById('loading-bubble');
 
         form.addEventListener('submit', function(e) {
             if(msgInput.value.trim() === "") return;
 
-            msgInput.readonly = true;
+            // Hide welcome message if it exists
+            const welcomeMessage = document.getElementById('welcomeMessage');
+            if(welcomeMessage) {
+                welcomeMessage.style.display = 'none';
+            }
+
+            // 4a. IMMEDIATELY APPEND USER MESSAGE TO CHAT WINDOW
+            const userMessage = msgInput.value.trim();
+
+            // Store message in hidden field for form submission
+            hiddenMessage.value = userMessage;
+
+            const userMessageBubble = document.createElement('div');
+            userMessageBubble.className = 'wrapper-user';
+            userMessageBubble.innerHTML = `
+                <div class="msg-user">
+                    <div class="formatted-content">${DOMPurify.sanitize(marked.parse(userMessage))}</div>
+                </div>
+            `;
+
+            // Insert before the loading bubble
+            chatWindow.insertBefore(userMessageBubble, loadingBubble);
+
+            // Clear the visible input field
+            msgInput.value = '';
+
+            // 4b. UPDATE UI STATE - Disable input and button
+            msgInput.disabled = true;
+            msgInput.style.cursor = "not-allowed";
             btnSend.disabled = true;
-            inputGroup.style.opacity = "0.7";
+            inputGroup.style.opacity = "0.5";
+            inputGroup.style.pointerEvents = "none";
             btnText.innerText = "Sending...";
             btnSpinner.style.display = "inline-block";
             loadingBubble.style.display = "block";
 
-            // Scroll again to show the loading bubble
+            // Scroll again to show the user message and loading bubble
             chatWindow.scrollTop = chatWindow.scrollHeight;
         });
     });
