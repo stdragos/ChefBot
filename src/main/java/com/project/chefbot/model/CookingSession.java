@@ -3,6 +3,7 @@ package com.project.chefbot.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,6 +23,10 @@ public class CookingSession {
     @Getter
     private String chefPersonality;
 
+    @Getter
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("timestamp ASC")
     private List<ChatMessage> messages = new ArrayList<>();
@@ -32,6 +37,11 @@ public class CookingSession {
     private User user;
 
     public CookingSession() {}
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+    }
 
     public void setId(Long id) { this.id = id; }
 
@@ -52,4 +62,6 @@ public class CookingSession {
     public void setMessages(List<ChatMessage> messages) { this.messages = messages; }
 
     public void setUser(User user) { this.user = user; }
+
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

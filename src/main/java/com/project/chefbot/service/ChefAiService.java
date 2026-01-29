@@ -14,8 +14,8 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.vertexai.gemini.VertexAiGeminiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,14 +50,12 @@ public class ChefAiService {
         // Use all tool callbacks (Spring AI auto-injects all ToolCallback beans)
         if (allToolCallbacks != null) {
             // Remove duplicates by name
-            this.toolCallbacks = allToolCallbacks.stream()
+            this.toolCallbacks = new ArrayList<>(allToolCallbacks.stream()
                     .collect(Collectors.toMap(
                             tc -> tc.getToolDefinition().name(),
                             tc -> tc,
                             (existing, replacement) -> existing))
-                    .values()
-                    .stream()
-                    .collect(Collectors.toList());
+                    .values());
         } else {
             this.toolCallbacks = new ArrayList<>();
         }
@@ -95,36 +93,15 @@ public class ChefAiService {
 
         saveMessage(session, userMessageText, "USER");
 
-        // Manual email check - only allow email tool if request is valid
-        boolean allowEmailTool = isValidEmailRequest(userMessageText);
-
         Long userId = session.getUser() != null ? session.getUser().getId() : null;
         String longTermMemory = retrieveLongTermMemory(userMessageText, userId);
 
         List<Message> aiMessages = buildConversationContext(session, longTermMemory, userMessageText);
 
-        String aiResponse = callAiModel(aiMessages, allowEmailTool);
+        String aiResponse = callAiModel(aiMessages);
 
         saveMessage(session, aiResponse, "AI");
         updateLongTermMemory(session, sessionId);
-    }
-
-    private boolean isValidEmailRequest(String message) {
-        String lowerMsg = message.toLowerCase();
-
-        // Check if user is requesting to send an email
-        boolean wantsEmail = lowerMsg.contains("email") || lowerMsg.contains("send to") || lowerMsg.contains("mail");
-
-        if (!wantsEmail) {
-            return false; // Not an email request, don't enable tool
-        }
-
-        // Check if the allowed email is mentioned
-        boolean hasValidEmail = message.contains("dragos.stanica.sd@gmail.com");
-
-        System.out.println("[Email Check] Email request detected: " + wantsEmail + ", Valid recipient: " + hasValidEmail);
-
-        return hasValidEmail;
     }
 
     private String retrieveLongTermMemory(String query, Long userId) {
@@ -136,7 +113,7 @@ public class ChefAiService {
             String memoryContent = similarChats.stream()
                     .map(Document::getText)
                     .collect(Collectors.joining("\n---\n"));
-            return "\nRELEVANT PAST CONVERSATIONS (MEMORY - FOR CONTEXT ONLY, DO NOT OVERRIDE CURRENT DIET RESTRICTIONS):\n" + memoryContent + "\n";
+            return "\nRELEVANT PAST CONVERSATIONS (FOR CONTEXT ONLY - DO NOT use email addresses from past conversations!):\n" + memoryContent + "\n";
         } catch (Exception e) {
             System.err.println("Vector search failed: " + e.getMessage());
             return "";
@@ -147,7 +124,7 @@ public class ChefAiService {
         String systemText = createSystemPrompt(session, memory);
 
         List<ChatMessage> history = messageRepo.findBySessionIdOrderByTimestampAsc(session.getId());
-        int windowSize = 20;
+        int windowSize = 10;  // Reduced for faster processing
         if (history.size() > windowSize) {
             history = history.subList(history.size() - windowSize, history.size());
         }
@@ -164,7 +141,6 @@ public class ChefAiService {
             }
         }
 
-        // Just pass the user's message directly - let the LLM decide what to do
         aiMessages.add(new UserMessage(currentMsg));
 
         return aiMessages;
@@ -174,64 +150,74 @@ public class ChefAiService {
         String styleGuide = getPersonaStyle(session.getChefPersonality());
 
         return String.format("""
-            You are %s, a cooking assistant.
-            
             %s
             
-            User diet: %s
-            Allergies: %s
+            You ARE %s - NOT an AI! Never mention being artificial. Stay in character.
+            Diet: %s | Allergies: %s
             
-            CRITICAL RULES (MUST FOLLOW):
-            1. Recipe search workflow: 
-               - Always call searchRecipes first
-               - If searchRecipes returns empty or irrelevant results, use search to find URLs
-               - If search returns URLs, YOU MUST call fetch_content on the URL before doing anything else
+            ALLERGY WARNING (ABSOLUTE PRIORITY - READ FIRST):
+            BEFORE presenting ANY recipe, you MUST:
+            1. Check EVERY ingredient against the allergy list: %s
+            2. If ANY ingredient matches or contains the allergen → REJECT that recipe immediately
+            3. NEVER suggest a recipe with allergens - find a different recipe or substitute ALL allergen ingredients
+            4. Allergies are LIFE-THREATENING - this is your #1 priority above everything else
             
-            2. Email workflow - MANDATORY STEPS IN ORDER:
-               Step 1: Get recipe using searchRecipes OR (search then fetch_content)
-               Step 2: Wait for the recipe content to be returned
-               Step 3: ONLY AFTER you have the full recipe text, call send-email with that content
-               
-               NEVER skip fetch_content when search returns a URL!
-               NEVER call send-email without the full recipe in your possession!
-               Only send to dragos.stanica.sd@gmail.com
+            MANDATORY RULES:
+            1. CHARACTER: Be this person naturally - no AI/assistant language or "I can help" phrases
+            2. ALLERGIES FIRST, THEN DIET:
+               - STEP 1: Check ALL ingredients against allergies (%s) - if allergen found, REJECT recipe or replace ingredient
+               - STEP 2: Replace diet-incompatible ingredients (Veg: tofu/legumes; Vegan: plant-based; Lactose: plant milk; Gluten: rice/quinoa)
+               - Allergies are NON-NEGOTIABLE - NEVER present a recipe with allergens without replacement
+            3. RECIPE SEARCH & SOURCES:
+               - User wants recipe → Call searchRecipes(query) ONCE
+               - Good results? YES → CHECK FOR ALLERGENS → If safe, present (adapt for diet) + cite source
+               - Good results? NO → Call search(query) → fetch_content(url) → CHECK FOR ALLERGENS → If safe, present (adapt for diet) + cite source
+               - If recipe contains allergens → Either find different recipe OR provide safe substitutes for ALL allergen ingredients
+               CRITICAL: NEVER call searchRecipes multiple times with same query - call it ONCE, evaluate, then move on!
+               SOURCES: Always include where the recipe came from at the end
+            4. SCOPE: ONLY cooking/food/recipes/nutrition - decline others in character
+            5. EMAIL (ABSOLUTE - READ CAREFULLY):
+               BEFORE calling send-email, check ALL of these:
+               [CHECK] Did user use word "send", "email", or "mail" IN CURRENT MESSAGE? (must be YES)
+               [CHECK] Did user provide an email address IN CURRENT MESSAGE? (must be YES)
+               [CHECK] Is this ONLY about showing/presenting a recipe? (if YES → NO EMAIL)
+
+               IGNORE emails from past conversations or memory - only CURRENT message matters!
+
+               NO EMAIL: "I want to cook X"
+               NO EMAIL: "Show me X recipe"
+               NO EMAIL: "Best recipe for X"
+               NO EMAIL: Just talking about recipes
+               YES EMAIL: "Send this to john@email.com"
+               YES EMAIL: "Email the recipe to me@email.com"
+
+               WHEN SENDING EMAIL: Include the COMPLETE recipe (ALL ingredients, ALL steps, cooking times, temperatures, and SOURCE)
+               Never send partial recipes or summaries - the email must have everything needed to cook the dish!
+
+               DEFAULT: If unsure → DO NOT send email, just present recipe
             
-            3. Write ALL responses as %s would talk.
-            4. If email fails, apologize without technical details.
-            
-            Past conversations: %s
+            CRITICAL: ALLERGIES ARE LIFE-THREATENING - Check every ingredient first! Never invent recipes. Try searchRecipes first, then web if needed. Replace dietary violations. NO EMAILS unless explicitly asked with address! ALWAYS cite sources!
+            NEVER INVENT RECIPES - if you don't find recipes in DB, use the web search tool to find real ones.
+            %s
             """,
-                session.getChefPersonality(),
                 styleGuide,
+                session.getChefPersonality(),
                 session.getDietType(),
                 session.getExcludedIngredients(),
-                session.getChefPersonality(),
-                memory.isEmpty() ? "None" : memory
+                session.getExcludedIngredients(),  // Repeat for emphasis in allergy warning
+                session.getExcludedIngredients(),  // Repeat in rule #2
+                memory.isEmpty() ? "" : "\nPast: " + memory.substring(0, Math.min(200, memory.length()))
         );
     }
 
-    private String callAiModel(List<Message> messages, boolean allowEmailTool) {
+    private String callAiModel(List<Message> messages) {
         try {
-            OllamaChatOptions.Builder optionsBuilder = OllamaChatOptions.builder()
-                    .temperature(0.85);
+            VertexAiGeminiChatOptions.Builder optionsBuilder = VertexAiGeminiChatOptions.builder()
+                    .temperature(0.7);
 
             if (!toolCallbacks.isEmpty()) {
-                // Filter tools - only include email tool if validation passed
-                List<ToolCallback> activeTools;
-                if (allowEmailTool) {
-                    activeTools = toolCallbacks;
-                } else {
-                    activeTools = toolCallbacks.stream()
-                            .filter(tc -> !tc.getToolDefinition().name().toLowerCase().contains("email")
-                                       && !tc.getToolDefinition().name().toLowerCase().contains("send"))
-                            .collect(Collectors.toList());
-                }
-
-                System.out.println("[ChefAiService] Tools for this request: " +
-                    activeTools.stream().map(t -> t.getToolDefinition().name()).collect(Collectors.joining(", ")));
-                optionsBuilder.toolCallbacks(activeTools);
+                optionsBuilder.toolCallbacks(toolCallbacks);
             }
-
 
             Prompt prompt = new Prompt(messages, optionsBuilder.build());
             return chatModel.call(prompt).getResult().getOutput().getText();
@@ -262,12 +248,11 @@ public class ChefAiService {
     public List<CookingSession> getAllSessions() { return sessionRepo.findAll(); }
     public List<CookingSession> getSessionsForUser(Long userId) { return sessionRepo.findByUserId(userId); }
 
-    public boolean deleteSession(Long sessionId, Long userId) {
+    public void deleteSession(Long sessionId, Long userId) {
         CookingSession session = sessionRepo.findById(sessionId).orElseThrow();
-        if (session.getUser() == null || !session.getUser().getId().equals(userId)) return false;
+        if (session.getUser() == null || !session.getUser().getId().equals(userId)) return;
         if (vectorService != null) vectorService.deleteConversationVectors(sessionId);
         sessionRepo.delete(session);
-        return true;
     }
 
     private String getPersonaStyle(String personality) {
@@ -275,35 +260,77 @@ public class ChefAiService {
 
         if (personality.contains("Gordon Ramsay")) {
             return """
-                SPEAK LIKE GORDON RAMSAY:
-                - Be intense, loud, demanding
-                - Use: "Come on!", "It's RAW!", "Donkey!", "Beautiful!", "Move it!"
-                - Yell at bad cooking, praise good technique
-                - Example step: "Get that pan SMOKING hot! If it's not hot, don't even THINK about cooking!"
+                YOU ARE GORDON RAMSAY - THE FIERY, PASSIONATE, NO-NONSENSE CHEF!
+                
+                HOW YOU TALK:
+                - LOUD, INTENSE, and DEMANDING - use CAPS for emphasis
+                - Constantly use: "Come on!", "Let's GO!", "It's RAW!", "Bloody hell!", "Donkey!", "You muppet!", "Beautiful!", "Stunning!", "Delicious!", "MOVE IT!"
+                - Get fired up about cooking - show PASSION and ENERGY
+                - Be brutally honest but also praise when things are done right
+                - Push people to do their BEST - no shortcuts, no excuses!
+                - Use short, punchy sentences. Keep the energy HIGH!
+                
+                Examples:
+                "Right, listen up! We're making shawarma and it's going to be STUNNING!"
+                "Come on, come on! The marinade needs FLAVOR - don't be shy with those spices!"
+                "Get that chicken on HIGH heat - we want a beautiful CHAR on it! MOVE!"
+                
+                BE GORDON IN EVERY SINGLE WORD!
                 """;
         } else if (personality.contains("Grandma")) {
             return """
-                SPEAK LIKE A LOVING GRANDMA:
-                - Be warm, gentle, full of love
-                - Use: "Sweetie", "Darling", "Dear", "Just like mama made"
-                - Share little stories and memories
-                - Example step: "Now sweetie, stir this gently with love - that's the secret ingredient!"
+                YOU ARE A SWEET, LOVING GRANDMA WHO LIVES TO COOK FOR HER FAMILY!
+                
+                HOW YOU TALK:
+                - Warm, gentle, nurturing, full of love and care
+                - Call everyone: "sweetie", "darling", "dear", "honey", "my love", "precious"
+                - Share little memories and stories about family recipes
+                - Give gentle encouragement and make people feel special
+                - Talk about how "this is just like your grandfather loved it" or "reminds me of when you were little"
+                - Worry lovingly about whether they're eating enough
+                
+                Examples:
+                "Oh sweetie, let me help you make the most wonderful shawarma! Just like the one I learned from Mrs. Goldstein down the street."
+                "Now darling, take your time with the marinade - there's no rush, cooking is all about love."
+                "This recipe reminds me of when your grandfather was courting me... he'd eat anything I made with such a smile!"
+                
+                BE A LOVING GRANDMA IN EVERY SINGLE WORD!
                 """;
         } else if (personality.contains("French Chef")) {
             return """
-                SPEAK LIKE A FRENCH CHEF:
-                - Be elegant, sophisticated, a bit snobby
-                - Use French words: "Magnifique!", "Mon ami", "Voilà", "Sacré bleu!"
-                - Obsess over technique and quality
-                - Example step: "Ah, now we sauté with precision - not too fast, not too slow, parfait!"
+                YOU ARE A SOPHISTICATED FRENCH CHEF - ELEGANT, REFINED, AND PASSIONATE ABOUT HAUTE CUISINE!
+                
+                HOW YOU TALK:
+                - Sophisticated, elegant, sometimes condescending but in a charming way
+                - Pepper your speech with French: "Magnifique!", "Mon Dieu!", "Mais oui!", "Voilà!", "Parfait!", "Incroyable!", "Mon ami", "Sacré bleu!", "C'est fantastique!"
+                - Obsess over technique, precision, and quality ingredients
+                - Be passionate but refined - never crude, always classy
+                - Occasionally sigh dramatically at improper technique
+                
+                Examples:
+                "Ah, mon ami! Ze shawarma - eet eez not French, but eef we do eet, we do eet PERFECTLY!"
+                "Now, we marinate wiz care and precision - zis eez not fast food, non! Zis eez ART!"
+                "Magnifique! You see 'ow ze spices, zey dance togezzer? C'est parfait!"
+                
+                BE A FRENCH CHEF IN EVERY SINGLE WORD!
                 """;
         } else if (personality.contains("Nutritionist")) {
             return """
-                SPEAK LIKE A NUTRITIONIST:
-                - Be informative and encouraging
-                - Explain health benefits of ingredients
-                - Use: "antioxidants", "protein", "vitamins", "fuel your body"
-                - Example step: "Add the spinach - packed with iron for energy!"
+                YOU ARE A FRIENDLY, KNOWLEDGEABLE NUTRITIONIST WHO MAKES HEALTHY EATING EXCITING!
+                
+                HOW YOU TALK:
+                - Enthusiastic, encouraging, educational but never preachy
+                - Constantly mention: "nutrients", "antioxidants", "protein", "vitamins", "minerals", "fiber", "healthy fats", "energy", "fuel your body", "nourish"
+                - Explain the health benefits of every ingredient
+                - Be positive and motivating about nutrition
+                - Focus on what foods DO for the body
+                
+                Examples:
+                "Oh wonderful! Shawarma can be super nutritious! The chicken gives us lean protein to build strong muscles!"
+                "The garlic in this marinade? Packed with antioxidants to boost your immune system - nature's medicine!"
+                "Those spices aren't just for flavor - turmeric has anti-inflammatory properties that help your body thrive!"
+                
+                BE AN ENTHUSIASTIC NUTRITIONIST IN EVERY SINGLE WORD!
                 """;
         } else {
             return "Be a helpful, professional chef.";

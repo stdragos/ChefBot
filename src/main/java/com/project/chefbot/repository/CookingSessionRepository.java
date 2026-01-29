@@ -13,5 +13,6 @@ public interface CookingSessionRepository extends JpaRepository<CookingSession, 
     @Query("SELECT DISTINCT s FROM CookingSession s LEFT JOIN FETCH s.messages WHERE s.id = :id")
     Optional<CookingSession> findByIdWithMessages(@Param("id") Long id);
 
-    List<CookingSession> findByUserId(Long userId);
+    @Query("SELECT s FROM CookingSession s WHERE s.user.id = :userId ORDER BY s.createdAt DESC")
+    List<CookingSession> findByUserId(@Param("userId") Long userId);
 }
